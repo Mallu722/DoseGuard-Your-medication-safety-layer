@@ -1,0 +1,22 @@
+{
+  "name": "doseguard",
+  "version": "1.0.0",
+  "description": "DoseGuard - Medication safety layer",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:frontend": "cd frontend && npm start",
+    "dev:backend": "cd backend && npm run dev",
+    "build": "cd frontend && npm run build"
+  },
+  "keywords": [
+    "healthcare",
+    "medication",
+    "safety"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
