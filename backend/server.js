@@ -8,9 +8,33 @@ dotenv.config();
 const app = express();
 
 // Middleware
-app.use(cors());
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://dose-guard-your-medication-safety-l-fawn.vercel.app',
+  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL.replace(/\/$/, '')] : [])
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (
+      allowedOrigins.indexOf(origin) !== -1 ||
+      origin.endsWith('.vercel.app') ||
+      process.env.NODE_ENV !== 'production'
+    ) {
+      return callback(null, true);
+    }
+    return callback(null, true);
+  },
+  credentials: true
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Root endpoint for health ping
+app.get('/', (req, res) => {
+  res.json({ message: 'DoseGuard API is running', status: 'ok' });
+});
 
 // Routes
 const authRoutes = require('./routes/auth');
@@ -219,28 +243,47 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-// Try to connect to MongoDB, but allow app to run without it
-let dbConnected = false;
-const mongodbUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/doseguard';
-
-mongoose.connect(mongodbUri)
-  .then(() => {
-    dbConnected = true;
-    console.log('✓ Connected to MongoDB');
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-      console.log(`API available at http://localhost:${PORT}/api`);
+// MongoDB connection caching for serverless environments (Vercel)
+let cachedDbPromise = null;
+const connectDB = async () => {
+  if (mongoose.connection.readyState >= 1) {
+    return mongoose.connection;
+  }
+  if (!cachedDbPromise) {
+    const mongodbUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/doseguard';
+    cachedDbPromise = mongoose.connect(mongodbUri, {
+      serverSelectionTimeoutMS: 5000,
+    }).then((m) => {
+      console.log('✓ Connected to MongoDB');
+      return m;
+    }).catch((err) => {
+      cachedDbPromise = null;
+      console.warn('⚠ MongoDB connection failed:', err.message);
+      console.warn('⚠ Running in offline mode with demo data');
     });
-  })
-  .catch((err) => {
-    dbConnected = false;
-    console.warn('⚠ MongoDB connection failed:', err.message);
-    console.warn('⚠ Running in offline mode with demo data');
+  }
+  return cachedDbPromise;
+};
+
+// Ensure database connection middleware
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+  } catch (err) {
+    console.error('DB middleware error:', err);
+  }
+  next();
+});
+
+// If running locally or on a standard server, listen on PORT
+// On Vercel, the exported app is automatically wrapped by serverless functions
+if (!process.env.VERCEL) {
+  connectDB().finally(() => {
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
       console.log(`API available at http://localhost:${PORT}/api`);
-      console.log(`Demo endpoint: http://localhost:${PORT}/api/demo/patient`);
     });
   });
+}
 
 module.exports = app;
